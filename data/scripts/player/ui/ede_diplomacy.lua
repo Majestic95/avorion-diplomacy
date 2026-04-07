@@ -205,15 +205,15 @@ end
 -- CLIENT: Callbacks
 -- ============================================================
 
-function EdeDiplomacy.onTariffSliderChanged(value)
-    if tariffRateLabel then
-        tariffRateLabel.caption = tostring(math.floor(value)) .. "%"
+function EdeDiplomacy.onTariffSliderChanged(slider)
+    if tariffRateLabel and slider then
+        tariffRateLabel.caption = tostring(math.floor(slider.value)) .. "%"
     end
 end
 
-function EdeDiplomacy.onAgreementSliderChanged(value)
-    if agreementDiscountLabel then
-        agreementDiscountLabel.caption = tostring(math.floor(value)) .. "%"
+function EdeDiplomacy.onAgreementSliderChanged(slider)
+    if agreementDiscountLabel and slider then
+        agreementDiscountLabel.caption = tostring(math.floor(slider.value)) .. "%"
     end
 end
 
@@ -396,16 +396,19 @@ end
 -- Territory cache: faction_index → sector count (refreshed per tab open)
 local territoryCounts = {}
 
--- Scan territory around all known factions using Galaxy():getControllingFaction()
--- Samples a grid around the galaxy center. Step size keeps it fast (~400 checks).
-local function scanTerritory()
+-- Scan territory around the player's current position using Galaxy():getControllingFaction()
+-- Samples a grid centered on the player. Step size keeps it fast.
+local function scanTerritory(centerX, centerY)
     territoryCounts = {}
     local galaxy = Galaxy()
-    local step = 25
-    local radius = 250
+    local step = 15
+    local radius = 150
 
-    for x = -radius, radius, step do
-        for y = -radius, radius, step do
+    centerX = centerX or 0
+    centerY = centerY or 0
+
+    for x = centerX - radius, centerX + radius, step do
+        for y = centerY - radius, centerY + radius, step do
             local controllingFaction = galaxy:getControllingFaction(x, y)
             if controllingFaction then
                 local fi = controllingFaction.index
@@ -416,6 +419,22 @@ local function scanTerritory()
         end
     end
 end
+
+-- Map stateForm to our archetype names for power score bonus
+-- stateForm values from vanilla faction.lua (FactionStateFormType enum, 1-indexed)
+local stateFormToArchetype = {
+    -- 1=Vanilla, 2=Emirate, 3=States, 4=Planets, 5=Kingdom, 6=Army
+    -- 7=Empire, 8=Clan, 9=Church, 10=Corporation, 11=Federation, 12=Collective
+    -- 13=Followers, 14=Organization, 15=Alliance, 16=Republic, 17=Commonwealth
+    -- 18=Dominion, 19=Syndicate, 20=Guild, 21=Buccaneers, 22=Conglomerate
+    [2] = "Traditional", [5] = "Traditional", [7] = "Traditional",
+    [3] = "Independent", [4] = "Independent", [16] = "Independent", [18] = "Independent",
+    [6] = "Militaristic", [8] = "Militaristic", [21] = "Militaristic",
+    [9] = "Religious", [13] = "Religious",
+    [10] = "Corporate", [19] = "Corporate", [20] = "Corporate", [22] = "Corporate",
+    [11] = "Alliance", [15] = "Alliance", [17] = "Alliance",
+    [12] = "Sect",
+}
 
 -- Calculate power score for any faction type
 local function calcFactionScore(faction)
@@ -431,10 +450,14 @@ local function calcFactionScore(faction)
 
     local sectors = territoryCounts[faction.index] or 0
 
-    -- AI factions get an archetype bonus
+    -- Map AI faction's stateForm to archetype for bonus
     local archetype = nil
     if faction.isAIFaction then
-        archetype = "Corporate"
+        local sf = faction.stateForm
+        if sf then
+            archetype = stateFormToArchetype[sf]
+        end
+        archetype = archetype or "Vanilla"
     end
 
     return PowerScore.calculate({
@@ -460,8 +483,9 @@ function EdeDiplomacy.serverGetDiplomacyData()
     local store = Server()
     local playerIndex = player.index
 
-    -- Scan territory for all factions (fast grid sample)
-    scanTerritory()
+    -- Scan territory for all factions centered on player's location
+    local sx, sy = Sector():getCoordinates()
+    scanTerritory(sx, sy)
 
     local playerScore = calcFactionScore(player)
 
@@ -494,9 +518,14 @@ function EdeDiplomacy.serverGetDiplomacyData()
                     end
                 end
 
+                -- Clean faction name: strip dev comments like /*...*/
+                local displayName = faction.name or "Unknown"
+                displayName = displayName:gsub("/%*.*%*/", ""):match("^%s*(.-)%s*$")
+                if displayName == "" then displayName = "Unknown Faction" end
+
                 table.insert(factions, {
                     index = fi,
-                    name = faction.name,
+                    name = displayName,
                     score = fScore,
                     tariff_rate = tariff_rate,
                     has_agreement = agreement ~= nil,
