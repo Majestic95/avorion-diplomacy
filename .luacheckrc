@@ -39,3 +39,9 @@ files["tests/mocks/*.lua"] = {
 
 -- Ignore unused self parameter (common in Lua OOP)
 ignore = { "212/self" }
+
+-- Exclude vanilla file overrides from linting (they contain vanilla code we don't control)
+exclude_files = {
+    "data/scripts/lib/tradingmanager.lua",
+    "data/scripts/entity/merchants/resourcetrader.lua",
+}
