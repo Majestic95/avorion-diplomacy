@@ -160,40 +160,72 @@ describe("PowerScore", function()
         end)
     end)
 
-    describe("enforcementCost", function()
-        it("returns base cost when scores are equal", function()
-            local cost = PowerScore.enforcementCost(1000, 1000, 10000)
+    describe("tariffCost", function()
+        it("scales with tariff rate — 15% on equal factions", function()
+            -- 200000 * 0.15 * 2 * 1.0 = 60000
+            local cost = PowerScore.tariffCost(1000, 1000, 0.15)
+            assert.are.equal(60000, cost)
+        end)
+
+        it("scales with tariff rate — 50% on equal factions", function()
+            -- 200000 * 0.50 * 2 * 1.0 = 200000
+            local cost = PowerScore.tariffCost(1000, 1000, 0.50)
+            assert.are.equal(200000, cost)
+        end)
+
+        it("increases when target is stronger", function()
+            -- 200000 * 0.15 * 2 * 2.0 = 120000
+            local cost = PowerScore.tariffCost(500, 1000, 0.15)
+            assert.are.equal(120000, cost)
+        end)
+
+        it("floors ratio at 0.5 for very weak targets", function()
+            -- 200000 * 0.15 * 2 * 0.5 = 30000
+            local cost = PowerScore.tariffCost(10000, 1, 0.15)
+            assert.are.equal(30000, cost)
+        end)
+
+        it("caps at 2 million", function()
+            -- 200000 * 0.50 * 2 * 100 = 20000000 -> capped at 2000000
+            local cost = PowerScore.tariffCost(10, 1000, 0.50)
+            assert.are.equal(2000000, cost)
+        end)
+
+        it("returns max when actor has zero score", function()
+            local cost = PowerScore.tariffCost(0, 1000, 0.15)
+            assert.are.equal(2000000, cost)
+        end)
+
+        it("handles zero target score", function()
+            -- target_score becomes 1, ratio = 1/1000 -> clamped to 0.5
+            -- 200000 * 0.15 * 2 * 0.5 = 30000
+            local cost = PowerScore.tariffCost(1000, 0, 0.15)
+            assert.are.equal(30000, cost)
+        end)
+
+        it("5% tariff on weak faction is cheap", function()
+            -- 200000 * 0.05 * 2 * 0.5 = 10000
+            local cost = PowerScore.tariffCost(1000, 100, 0.05)
             assert.are.equal(10000, cost)
         end)
+    end)
 
-        it("increases cost when target is stronger", function()
-            local cost = PowerScore.enforcementCost(500, 1000, 10000) -- ratio 2.0
-            assert.are.equal(20000, cost)
+    describe("embargoCost", function()
+        it("scales with power ratio", function()
+            -- 500000 * 1.0 = 500000
+            local cost = PowerScore.embargoCost(1000, 1000)
+            assert.are.equal(500000, cost)
         end)
 
-        it("decreases cost when target is weaker but floors at 0.5x", function()
-            local cost = PowerScore.enforcementCost(10000, 100, 10000) -- ratio 0.01 -> clamped to 0.5
-            assert.are.equal(5000, cost)
+        it("increases for stronger targets", function()
+            -- 500000 * 2.0 = 1000000
+            local cost = PowerScore.embargoCost(500, 1000)
+            assert.are.equal(1000000, cost)
         end)
 
-        it("floors at half base cost for very weak targets", function()
-            local cost = PowerScore.enforcementCost(5000, 1, 10000)
-            assert.are.equal(5000, cost)
-        end)
-
-        it("returns high cost when actor has zero score", function()
-            local cost = PowerScore.enforcementCost(0, 1000, 10000)
-            assert.are.equal(100000, cost) -- 10x penalty
-        end)
-
-        it("returns half base cost when target has zero score", function()
-            local cost = PowerScore.enforcementCost(1000, 0, 10000)
-            assert.are.equal(5000, cost)
-        end)
-
-        it("rounds to nearest integer", function()
-            local cost = PowerScore.enforcementCost(700, 1000, 10000) -- ratio ~1.4286
-            assert.are.equal(14286, cost)
+        it("caps at 4 million", function()
+            local cost = PowerScore.embargoCost(10, 1000)
+            assert.are.equal(4000000, cost)
         end)
     end)
 

@@ -166,9 +166,10 @@ end
 --- Calculate the enforcement cost for a tariff.
 --- @param imposer_score number Imposer's current power score
 --- @param target_score number Target's current power score
---- @return number cost Credits per game-day cycle
-function TariffManager.getEnforcementCost(imposer_score, target_score)
-    return PowerScore.enforcementCost(imposer_score, target_score, TariffManager.Config.BASE_COST)
+--- @param tariff_rate number|nil The tariff rate (defaults to 0.15)
+--- @return number cost Credits per game-day cycle (3 real hours)
+function TariffManager.getEnforcementCost(imposer_score, target_score, tariff_rate)
+    return PowerScore.tariffCost(imposer_score, target_score, tariff_rate or TariffManager.Config.DEFAULT_RATE)
 end
 
 --- Process a payment cycle for a tariff. Returns whether the tariff survives.
@@ -188,7 +189,7 @@ function TariffManager.processPaymentCycle(store, imposer_index, target_index,
         return false, 0
     end
 
-    local cost = TariffManager.getEnforcementCost(imposer_score, target_score)
+    local cost = TariffManager.getEnforcementCost(imposer_score, target_score, tariff.rate)
 
     if imposer_balance >= cost then
         -- Successful payment

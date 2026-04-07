@@ -43,6 +43,71 @@ function EdeDiplomacy.onShowTab()
     invokeServerFunction("serverGetDiplomacyData")
 end
 
+-- Server-side periodic update: every 3 real hours (10800 seconds = 1 game-day)
+-- Refreshes power scores and deducts tariff enforcement costs
+local CYCLE_INTERVAL = 10800 -- 3 real hours in seconds
+local cycleTimer = 0
+
+function EdeDiplomacy.getUpdateInterval()
+    return 60 -- check every 60 seconds
+end
+
+function EdeDiplomacy.updateServer(timestep)
+    cycleTimer = cycleTimer + timestep
+
+    if cycleTimer >= CYCLE_INTERVAL then
+        cycleTimer = 0
+        EdeDiplomacy.processCycle()
+    end
+end
+
+function EdeDiplomacy.processCycle()
+    local player = Player()
+    if not player then return end
+
+    local TariffManager = include("diplomacy/tariff_manager")
+    local PowerScore = include("economy/power_score")
+    local store = Server()
+    local playerIndex = player.index
+
+    -- Refresh territory scan
+    local sx, sy = Sector():getCoordinates()
+    scanTerritory(sx, sy)
+
+    local playerScore = calcFactionScore(player)
+
+    -- Process all active tariffs imposed by this player
+    local activeTariffs = TariffManager.getAllActive(store)
+    for _, pair in ipairs(activeTariffs) do
+        if pair.imposer == playerIndex then
+            local targetFaction = Faction(pair.target)
+            if targetFaction then
+                local targetScore = calcFactionScore(targetFaction)
+                local tariff = TariffManager.get(store, pair.imposer, pair.target)
+                local rate = tariff and tariff.rate or 0.15
+                local cost = PowerScore.tariffCost(playerScore, targetScore, rate)
+
+                local active, charged = TariffManager.processPaymentCycle(
+                    store, pair.imposer, pair.target,
+                    player.money, playerScore, targetScore,
+                    Server().unpausedRuntime
+                )
+
+                if charged > 0 then
+                    player:sendChatMessage("EDE", ChatMessageType.Normal,
+                        string.format("Tariff enforcement cost: -%dk cr (on %s)",
+                            math.floor(charged / 1000), targetFaction.name))
+                end
+
+                if not active then
+                    player:sendChatMessage("EDE", ChatMessageType.Warning,
+                        string.format("Tariff on %s has lapsed — insufficient funds!", targetFaction.name))
+                end
+            end
+        end
+    end
+end
+
 -- ============================================================
 -- CLIENT: Build UI
 -- ============================================================
@@ -564,12 +629,14 @@ function EdeDiplomacy.serverGetPreview(targetIndex)
     local playerScore = calcFactionScore(player)
     local targetScore = calcFactionScore(targetFaction)
 
-    -- Tariff preview
+    -- Tariff preview: show cost range at 15% and 50%
     local canEnforce, ratio = PowerScore.canEnforce(playerScore, targetScore, "tariff")
     local tariffPreview
     if canEnforce then
-        local cost = PowerScore.enforcementCost(playerScore, targetScore, 10000)
-        tariffPreview = string.format("Can enforce (%.0f%% power ratio, ~%d cr/cycle)", ratio * 100, cost)
+        local cost15 = PowerScore.tariffCost(playerScore, targetScore, 0.15)
+        local cost50 = PowerScore.tariffCost(playerScore, targetScore, 0.50)
+        tariffPreview = string.format("Can enforce | Cost: %dk (15%%) to %dk (50%%) /cycle",
+            math.floor(cost15 / 1000), math.floor(cost50 / 1000))
     else
         tariffPreview = string.format("Cannot enforce (%.0f%% power, need 30%%)", ratio * 100)
     end

@@ -85,25 +85,62 @@ function PowerScore.canEnforce(actor_score, target_score, action_type)
     return ratio >= threshold, ratio
 end
 
---- Calculate the per-cycle enforcement cost for maintaining a diplomatic action.
---- Cost scales with the power delta — stronger targets are more expensive to enforce against.
+-- Cost constants
+PowerScore.CostConfig = {
+    TARIFF_BASE = 200000,   -- base multiplier for tariff cost
+    TARIFF_MAX = 2000000,   -- maximum tariff cost per cycle (3 real hours)
+    EMBARGO_BASE = 500000,  -- base multiplier for embargo cost
+    EMBARGO_MAX = 4000000,  -- maximum embargo cost per cycle
+    MIN_RATIO = 0.5,        -- floor for power ratio (enforcing against very weak factions)
+}
+
+--- Calculate the per-cycle tariff enforcement cost.
+--- Formula: BASE × tariff_rate × 2 × (target_score / actor_score), capped at MAX.
 --- @param actor_score number The enforcing faction's power score
 --- @param target_score number The target faction's power score
---- @param base_cost number The base cost per cycle for this action type
---- @return number cost The credits owed per game-day cycle (floored to integer)
-function PowerScore.enforcementCost(actor_score, target_score, base_cost)
+--- @param tariff_rate number The tariff percentage (0.01 to 0.50)
+--- @return number cost Credits owed per game-day cycle (3 real hours)
+function PowerScore.tariffCost(actor_score, target_score, tariff_rate)
+    tariff_rate = tariff_rate or 0.15
     if actor_score <= 0 then
-        return base_cost * 10
+        return PowerScore.CostConfig.TARIFF_MAX
     end
     if target_score <= 0 then
-        return math.floor(base_cost * 0.5)
+        target_score = 1
     end
 
-    local ratio = target_score / actor_score
-    -- Floor at 0.5x base cost (enforcing against much weaker faction)
-    -- No ceiling — enforcing against a much stronger faction gets very expensive
-    local multiplier = math.max(ratio, 0.5)
-    return math.floor(base_cost * multiplier + 0.5)
+    local ratio = math.max(target_score / actor_score, PowerScore.CostConfig.MIN_RATIO)
+    local cost = PowerScore.CostConfig.TARIFF_BASE * tariff_rate * 2 * ratio
+    cost = math.min(cost, PowerScore.CostConfig.TARIFF_MAX)
+    return math.floor(cost + 0.5)
+end
+
+--- Calculate the per-cycle embargo enforcement cost.
+--- Same formula as tariff but with higher base and cap.
+--- @param actor_score number The enforcing faction's power score
+--- @param target_score number The target faction's power score
+--- @return number cost Credits owed per game-day cycle (3 real hours)
+function PowerScore.embargoCost(actor_score, target_score)
+    if actor_score <= 0 then
+        return PowerScore.CostConfig.EMBARGO_MAX
+    end
+    if target_score <= 0 then
+        target_score = 1
+    end
+
+    local ratio = math.max(target_score / actor_score, PowerScore.CostConfig.MIN_RATIO)
+    local cost = PowerScore.CostConfig.EMBARGO_BASE * ratio
+    cost = math.min(cost, PowerScore.CostConfig.EMBARGO_MAX)
+    return math.floor(cost + 0.5)
+end
+
+--- Legacy wrapper for backward compatibility with tariff_manager.
+--- @param actor_score number
+--- @param target_score number
+--- @param base_cost number (ignored — uses new formula with default 15% rate)
+--- @return number cost
+function PowerScore.enforcementCost(actor_score, target_score, _)
+    return PowerScore.tariffCost(actor_score, target_score, 0.15)
 end
 
 --- Compare two factions and return a summary.
@@ -118,8 +155,7 @@ function PowerScore.compare(actor_data, target_data, config)
     local can_tariff, ratio = PowerScore.canEnforce(actor_score, target_score, "tariff")
     local can_embargo, _ = PowerScore.canEnforce(actor_score, target_score, "embargo")
 
-    local tariff_base = config.tariff_base_cost or 10000
-    local embargo_base = config.embargo_base_cost or 25000
+    local tariff_rate = config.tariff_rate or 0.15
 
     return {
         actor_score = actor_score,
@@ -127,8 +163,8 @@ function PowerScore.compare(actor_data, target_data, config)
         ratio = ratio,
         can_tariff = can_tariff,
         can_embargo = can_embargo,
-        tariff_cost = PowerScore.enforcementCost(actor_score, target_score, tariff_base),
-        embargo_cost = PowerScore.enforcementCost(actor_score, target_score, embargo_base),
+        tariff_cost = PowerScore.tariffCost(actor_score, target_score, tariff_rate),
+        embargo_cost = PowerScore.embargoCost(actor_score, target_score),
     }
 end
 

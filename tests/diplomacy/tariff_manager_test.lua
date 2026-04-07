@@ -163,7 +163,7 @@ describe("TariffManager", function()
         it("deducts cost when imposer can pay", function()
             TariffManager.declare(store, 1, 2, 500, 500, 0.15, 1000)
             local active, cost = TariffManager.processPaymentCycle(
-                store, 1, 2, 50000, 500, 500, 2000
+                store, 1, 2, 500000, 500, 500, 2000
             )
             assert.is_true(active)
             assert.is_true(cost > 0)
@@ -196,14 +196,14 @@ describe("TariffManager", function()
             -- Miss one payment
             TariffManager.processPaymentCycle(store, 1, 2, 0, 500, 500, 2000)
             -- Pay successfully
-            TariffManager.processPaymentCycle(store, 1, 2, 50000, 500, 500, 3000)
+            TariffManager.processPaymentCycle(store, 1, 2, 500000, 500, 500, 3000)
             local tariff = TariffManager.get(store, 1, 2)
             assert.are.equal(0, tariff.missed_payments)
         end)
 
         it("returns false for non-existent tariff", function()
             local active, cost = TariffManager.processPaymentCycle(
-                store, 1, 2, 50000, 500, 500, 1000
+                store, 1, 2, 500000, 500, 500, 1000
             )
             assert.is_false(active)
             assert.are.equal(0, cost)
