@@ -1,0 +1,34 @@
+# Lua build artifacts
+*.luac
+luac.out
+
+# Bundled tool binaries (download via tools/setup.sh)
+tools/lua/
+tools/luacheck.exe
+tools/luarocks-*/
+
+# IDE / Editor
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# VS Code (keep .vscode/settings.json and .vscode/extensions.json)
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# Lua tooling
+.luarocks/
+lua_modules/
+luacov.stats.out
+luacov.report.out
+
+# Test output
+tests/output/
+coverage/
+
+# OS files
+desktop.ini

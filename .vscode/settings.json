@@ -1,0 +1,50 @@
+{
+    "Lua.runtime.version": "Lua 5.1",
+    "Lua.workspace.library": [
+        "F:/SteamLibrary/steamapps/common/Avorion/data/scripts/lib",
+        "F:/SteamLibrary/steamapps/common/Avorion/data/scripts"
+    ],
+    "Lua.workspace.ignoreDir": [
+        ".luarocks",
+        "lua_modules"
+    ],
+    "Lua.diagnostics.globals": [
+        "include",
+        "onServer",
+        "onClient",
+        "callable",
+        "Entity",
+        "Sector",
+        "Galaxy",
+        "Player",
+        "Server",
+        "Faction",
+        "Alliance",
+        "AIFaction",
+        "ScriptUI",
+        "UIRenderer",
+        "TradingGood",
+        "RelationStatus",
+        "ChatMessageType",
+        "vec2",
+        "vec3",
+        "Rect",
+        "Color",
+        "Matrix",
+        "Uuid",
+        "Format",
+        "GameSettings"
+    ],
+    "Lua.diagnostics.disable": [
+        "lowercase-global"
+    ],
+    "Lua.completion.callSnippet": "Replace",
+    "Lua.type.castNumberToInteger": true,
+    "[lua]": {
+        "editor.defaultFormatter": "JohnnyMorganz.stylua",
+        "editor.formatOnSave": true
+    },
+    "files.associations": {
+        "*.lua": "lua"
+    }
+}
