@@ -12,16 +12,28 @@ include ("randomext")
 include ("callable")
 
 -- [EDE MOD] Tariff/agreement hooks for cargo trades
--- Lazy-load EDE modules to avoid interfering with TradingManager's own loading
-local edeTariffManager = nil
-local edeAgreementManager = nil
+-- Self-contained: no include() of EDE modules (avoids interfering with TradingManager loading)
+-- Reads tariff/agreement state directly from Server():getValue()
 
-local function edeGetModules()
-    if not edeTariffManager then
-        edeTariffManager = include("diplomacy/tariff_manager")
-        edeAgreementManager = include("diplomacy/agreement_manager")
-    end
-    return edeTariffManager, edeAgreementManager
+local function edeJsonDecode(str)
+    if not str or type(str) ~= "string" then return nil end
+    local first = str:sub(1, 1)
+    if first ~= "{" and first ~= "[" then return nil end
+    -- Minimal JSON object decoder for {key:value} pairs
+    local ok, result = pcall(function()
+        local t = {}
+        for k, v in str:gmatch('"([^"]+)":([^,}]+)') do
+            v = v:match("^%s*(.-)%s*$") -- trim
+            if v == "true" then t[k] = true
+            elseif v == "false" then t[k] = false
+            elseif v == "null" then t[k] = nil
+            elseif v:sub(1,1) == '"' then t[k] = v:sub(2, -2)
+            else t[k] = tonumber(v) end
+        end
+        return t
+    end)
+    if ok then return result end
+    return nil
 end
 
 local function edeApplyTradeTariff(shipFaction, player, price, goodName, tradeDirection)
@@ -30,14 +42,28 @@ local function edeApplyTradeTariff(shipFaction, player, price, goodName, tradeDi
     if not station then return end
     local stationFactionIndex = station.factionIndex
     local store = Server()
+    local playerIndex = shipFaction.index
 
-    local TM, AM = edeGetModules()
-    if not TM or not AM then return end
+    -- Check tariff in both directions
+    local tariffRaw = store:getValue("ede_tariff_" .. stationFactionIndex .. "_" .. playerIndex)
+        or store:getValue("ede_tariff_" .. playerIndex .. "_" .. stationFactionIndex)
+    local tariff = edeJsonDecode(tariffRaw)
+    local tariff_rate = (tariff and tariff.active and tariff.rate) or 0
 
-    local surcharge, tariff_rate = TM.calculateSurcharge(
-        store, stationFactionIndex, shipFaction.index, price)
-    local _, agreement_rate = AM.calculateDiscount(
-        store, shipFaction.index, stationFactionIndex, price)
+    -- Check agreement
+    local a = math.min(playerIndex, stationFactionIndex)
+    local b = math.max(playerIndex, stationFactionIndex)
+    local agreeRaw = store:getValue("ede_agreement_" .. a .. "_" .. b)
+    local agreement = edeJsonDecode(agreeRaw)
+    local agreement_rate = 0
+    if agreement and agreement.status == "active" and agreement.discounts then
+        agreement_rate = agreement.discounts[tostring(stationFactionIndex)] or 0
+    end
+
+    local surcharge = 0
+    if tariff_rate > 0 then
+        surcharge = math.floor(price * tariff_rate + 0.5)
+    end
 
     local net = surcharge
     if agreement_rate > 0 then
@@ -47,12 +73,9 @@ local function edeApplyTradeTariff(shipFaction, player, price, goodName, tradeDi
     if net > 0 then
         if shipFaction:canPayMoney(net) then
             shipFaction:pay("Tariff surcharge", net)
-            local tariff = TM.get(store, stationFactionIndex, shipFaction.index)
-                or TM.get(store, shipFaction.index, stationFactionIndex)
             if tariff and tariff.imposer then
                 local imposer = Faction(tariff.imposer)
                 if imposer then imposer:receive("Tariff revenue", net) end
-                TM.recordRevenue(store, tariff.imposer, tariff.target, net)
             end
             player:sendChatMessage("EDE", ChatMessageType.Normal,
                 string.format("Tariff: -%s cr (%d%% on %s of %s)",
