@@ -10,7 +10,7 @@ describe("TariffManager", function()
     before_each(function()
         _resetMocks()
         TariffManager = include("diplomacy/tariff_manager")
-        store = Galaxy()
+        store = Server()
     end)
 
     describe("clampRate", function()

@@ -314,29 +314,28 @@ For scripts that touch the Avorion API (entity scripts, UI, callbacks):
 
 ### Simple Values
 ```lua
--- Store on a faction
-Faction():setValue("ede_tariff_rate", 0.15)
-local rate = Faction():getValue("ede_tariff_rate") or 0
+-- Store on server (galaxy-wide state) — NOT Galaxy(), which lacks setValue
+Server():setValue("ede_tariff_rate", 0.15)
+local rate = Server():getValue("ede_tariff_rate") or 0
+
+-- Store on a faction (per-faction state)
+Faction():setValue("ede_some_key", "value")
 ```
 
-### Complex State (JSON)
+### Complex State (via Persistence module)
 ```lua
-local json = include("util/json")
+local Persistence = include("util/persistence")
+local store = Server() -- galaxy-wide state
 
--- Store diplomatic state between two factions
-local key = "ede_diplo_" .. factionA.index .. "_" .. factionB.index
-local state = {
-    type = "tariff",
-    rate = 0.15,
-    imposed_tick = Server().unpausedRuntime,
-}
-Galaxy():setValue(key, json.encode(state))
+-- Store (auto-serializes tables to JSON, auto-prefixes key with "ede_")
+Persistence.save(store, "config", { tariff_rate = 0.15, active = true })
 
--- Retrieve
-local raw = Galaxy():getValue(key)
-if raw then
-    local state = json.decode(raw)
-end
+-- Load (auto-deserializes JSON)
+local config = Persistence.load(store, "config") -- returns table
+
+-- Bilateral state (order-independent key for faction pairs)
+Persistence.saveBilateral(store, "tariff", factionA.index, factionB.index, { rate = 0.15 })
+local tariff = Persistence.loadBilateral(store, "tariff", factionB.index, factionA.index) -- same data
 ```
 
 ### Key Naming Convention
@@ -454,6 +453,7 @@ _This section is updated in real time as patterns are discovered. Each entry inc
 - **`initUI()` is lazy** (2026-04-07): Only called when the player first interacts (presses F) with the entity, not when the script is added. Don't put critical non-UI setup there.
 - **No in-game console — everything goes through chat** (2026-04-07): Avorion has no backtick/tilde console. All commands (`/run`, `/give`, `/teleport`) are typed in the chat box (Enter key). `print()` output goes to server log files only (`%AppData%\Avorion\galaxies\<name>\serverlog*.txt`), NOT to chat. Use `Player():sendChatMessage("Name", ChatMessageType.Normal, "msg")` to show output in-game.
 - **`/run` requires `-dev` launch parameter** (2026-04-07): The `/run` command is silently ignored without dev mode. Enable it in Steam: right-click Avorion > Properties > Launch Options > add `-dev`. The "Dev Mode" checkbox in the Mods menu is a separate thing (controls script caching only).
+- **`Galaxy()` does NOT have `setValue`/`getValue`** (2026-04-07): Only `Server()`, `Entity()`, `Sector()`, `Faction()`, `Player()`, and `Alliance()` support key-value storage. Use `Server()` for galaxy-wide mod state persistence, NOT `Galaxy()`. This was discovered when all persistence tests failed in-game with "attempt to call method 'setValue' (a nil value)".
 - **`modinfo.lua` uses `meta = {}`, NOT `return {}`** (2026-04-07): Avorion executes modinfo.lua and reads the global `meta` variable. Using `return` silently fails — the mod won't appear in the menu. Also `authors` must be a table (`{"name"}`), not a plain string.
 - **Avorion uses Lua 5.1** (2026-04-07): Not 5.3 or 5.4. No integer type, no bitwise operators, no goto. Use `math.floor()` for integer math. String patterns, not regex.
 - **`package.path` must be set before `include()`** (2026-04-07): Vanilla scripts prepend `package.path = package.path .. ";data/scripts/lib/?.lua"` at the top. Our scripts must do the same.

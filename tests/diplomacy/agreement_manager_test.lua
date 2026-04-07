@@ -10,7 +10,7 @@ describe("AgreementManager", function()
     before_each(function()
         _resetMocks()
         AgreementManager = include("diplomacy/agreement_manager")
-        store = Galaxy()
+        store = Server()
     end)
 
     describe("clampDiscount", function()

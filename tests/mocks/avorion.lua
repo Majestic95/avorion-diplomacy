@@ -78,10 +78,16 @@ function Sector()
     return sector_instance
 end
 
--- Galaxy mock
-local galaxy_instance = setmetatable({}, { __index = ValueStoreMixin })
+-- Galaxy mock (NOTE: real Avorion Galaxy() does NOT have setValue/getValue)
+local galaxy_instance = {}
 function Galaxy()
     return galaxy_instance
+end
+
+-- Server mock (this is the correct global persistence store in Avorion)
+local server_instance = setmetatable({}, { __index = ValueStoreMixin })
+function Server()
+    return server_instance
 end
 
 -- Player mock
@@ -102,7 +108,7 @@ end
 function _resetMocks()
     entity_instance._values = {}
     sector_instance._values = {}
-    galaxy_instance._values = {}
+    server_instance._values = {}
     player_instance._values = {}
     faction_instance._values = {}
 end
