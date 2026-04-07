@@ -25,6 +25,20 @@ local agreementPreviewLabel = nil
 
 -- Cached data
 local cachedFactions = {}
+local cachedPlayerScore = 0
+
+-- Client-side tariff cost calculation (mirrors PowerScore.tariffCost)
+local TARIFF_COST_BASE = 200000
+local TARIFF_COST_MAX = 2000000
+local TARIFF_COST_MIN_RATIO = 0.5
+
+local function calcTariffCostClient(playerScore, targetScore, rate)
+    if playerScore <= 0 then return TARIFF_COST_MAX end
+    if targetScore <= 0 then targetScore = 1 end
+    local ratio = math.max(targetScore / playerScore, TARIFF_COST_MIN_RATIO)
+    local cost = TARIFF_COST_BASE * rate * 2 * ratio
+    return math.min(math.floor(cost + 0.5), TARIFF_COST_MAX)
+end
 
 -- ============================================================
 -- INITIALIZATION
@@ -274,6 +288,28 @@ function EdeDiplomacy.onTariffSliderChanged(slider)
     if tariffRateLabel and slider then
         tariffRateLabel.caption = tostring(math.floor(slider.value)) .. "%"
     end
+    -- Update cost preview based on current slider and selected faction
+    EdeDiplomacy.updateTariffCostPreview()
+end
+
+function EdeDiplomacy.updateTariffCostPreview()
+    if not tariffPreviewLabel then return end
+    local targetIndex = EdeDiplomacy.getSelectedFactionIndex()
+    if not targetIndex then return end
+
+    -- Find target score from cached data
+    local targetScore = 0
+    for _, f in ipairs(cachedFactions) do
+        if f.index == targetIndex then
+            targetScore = f.score or 0
+            break
+        end
+    end
+
+    local rate = math.floor(tariffRateSlider.value) / 100
+    local cost = calcTariffCostClient(cachedPlayerScore, targetScore, rate)
+    tariffPreviewLabel.caption = string.format("Cost: %dk cr/cycle (3h)", math.floor(cost / 1000))
+    tariffPreviewLabel.color = ColorRGB(1.0, 0.8, 0.2)
 end
 
 function EdeDiplomacy.onAgreementSliderChanged(slider)
@@ -287,6 +323,7 @@ function EdeDiplomacy.onTargetFactionChanged()
     local targetIndex = EdeDiplomacy.getSelectedFactionIndex()
     if targetIndex then
         invokeServerFunction("serverGetPreview", targetIndex)
+        EdeDiplomacy.updateTariffCostPreview()
     else
         EdeDiplomacy.clearPreviews()
     end
@@ -301,20 +338,28 @@ function EdeDiplomacy.onDeclareTariffPressed()
     local rate = math.floor(tariffRateSlider.value) / 100
     local penalty = math.floor(rate * 100000)
 
-    -- Find faction name from cached data
+    -- Find faction name and score from cached data
     local factionName = "Unknown"
+    local targetScore = 0
     for _, f in ipairs(cachedFactions) do
-        if f.index == targetIndex then factionName = f.name; break end
+        if f.index == targetIndex then
+            factionName = f.name
+            targetScore = f.score or 0
+            break
+        end
     end
+
+    local cycleCost = calcTariffCostClient(cachedPlayerScore, targetScore, rate)
 
     local desc = string.format(
         "Declaring a %d%% tariff on %s will:\n\n" ..
+        "- Cost %dk credits per cycle (every 3 hours)\n" ..
         "- Reset relations to neutral (0) if currently positive\n" ..
         "- Apply a -%d relations penalty\n" ..
         "- Relations cannot be positive while tariff is active\n" ..
         "- May provoke retaliation or war\n\n" ..
         "Proceed?",
-        math.floor(rate * 100), factionName, penalty)
+        math.floor(rate * 100), factionName, math.floor(cycleCost / 1000), penalty)
 
     EdeDiplomacy.showConfirmDialog(
         "Declare Tariff",
@@ -382,6 +427,7 @@ end
 function EdeDiplomacy.clientReceiveDiplomacyData(data)
     if not data then return end
     cachedFactions = data.factions or {}
+    cachedPlayerScore = data.playerScore or 0
 
     for i, line in ipairs(factionLines) do
         local f = cachedFactions[i]
