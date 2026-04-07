@@ -34,7 +34,7 @@ function EdeDiplomacy.initialize()
     if onClient() then
         tab = PlayerWindow():createTab("EDE Diplomacy", "data/textures/icons/domino-mask.png", "Economics & Diplomacy")
         PlayerWindow():moveTabToPosition(tab, 4)
-        tab.onShowFunction = "EdeDiplomacy.onShowTab"
+        tab.onShowFunction = "onShowTab"
         EdeDiplomacy.buildUI(tab)
     end
 end
@@ -89,7 +89,7 @@ function EdeDiplomacy.buildUI(tab)
     local targetHeaderRect = rightLister:placeCenter(vec2(rightLister.inner.width, 20))
     tab:createLabel(targetHeaderRect.lower, "Target Faction:", 13)
     local targetComboRect = rightLister:placeCenter(vec2(rightLister.inner.width, 25))
-    targetCombo = tab:createValueComboBox(targetComboRect, "EdeDiplomacy.onTargetFactionChanged")
+    targetCombo = tab:createValueComboBox(targetComboRect, "onTargetFactionChanged")
 
     rightLister:placeCenter(vec2(rightLister.inner.width, 4))
 
@@ -99,7 +99,7 @@ function EdeDiplomacy.buildUI(tab)
 
     local tariffSliderRect = rightLister:placeCenter(vec2(rightLister.inner.width, 25))
     local tSplit = UIVerticalSplitter(tariffSliderRect, 5, 0, 0.75)
-    tariffRateSlider = tab:createSlider(tSplit.left, 1, 50, 49, "", "EdeDiplomacy.onTariffSliderChanged")
+    tariffRateSlider = tab:createSlider(tSplit.left, 1, 50, 49, "", "onTariffSliderChanged")
     tariffRateSlider.value = 15
     tariffRateLabel = tab:createLabel(tSplit.right.lower, "15%", 13)
 
@@ -109,9 +109,9 @@ function EdeDiplomacy.buildUI(tab)
 
     local tariffBtnRect = rightLister:placeCenter(vec2(rightLister.inner.width, 28))
     local tBtnSplit = UIVerticalSplitter(tariffBtnRect, 5, 0, 0.5)
-    local declareBtn = tab:createButton(tBtnSplit.left, "Declare", "EdeDiplomacy.onDeclareTariffPressed")
+    local declareBtn = tab:createButton(tBtnSplit.left, "Declare", "onDeclareTariffPressed")
     declareBtn.uppercase = false
-    local removeBtn = tab:createButton(tBtnSplit.right, "Remove", "EdeDiplomacy.onRemoveTariffPressed")
+    local removeBtn = tab:createButton(tBtnSplit.right, "Remove", "onRemoveTariffPressed")
     removeBtn.uppercase = false
 
     rightLister:placeCenter(vec2(rightLister.inner.width, 4))
@@ -122,7 +122,7 @@ function EdeDiplomacy.buildUI(tab)
 
     local agreeSliderRect = rightLister:placeCenter(vec2(rightLister.inner.width, 25))
     local aSplit = UIVerticalSplitter(agreeSliderRect, 5, 0, 0.75)
-    agreementDiscountSlider = tab:createSlider(aSplit.left, 1, 30, 29, "", "EdeDiplomacy.onAgreementSliderChanged")
+    agreementDiscountSlider = tab:createSlider(aSplit.left, 1, 30, 29, "", "onAgreementSliderChanged")
     agreementDiscountSlider.value = 10
     agreementDiscountLabel = tab:createLabel(aSplit.right.lower, "10%", 13)
 
@@ -132,9 +132,9 @@ function EdeDiplomacy.buildUI(tab)
 
     local agreeBtnRect = rightLister:placeCenter(vec2(rightLister.inner.width, 28))
     local aBtnSplit = UIVerticalSplitter(agreeBtnRect, 5, 0, 0.5)
-    local proposeBtn = tab:createButton(aBtnSplit.left, "Propose", "EdeDiplomacy.onProposeAgreementPressed")
+    local proposeBtn = tab:createButton(aBtnSplit.left, "Propose", "onProposeAgreementPressed")
     proposeBtn.uppercase = false
-    local cancelBtn = tab:createButton(aBtnSplit.right, "Cancel", "EdeDiplomacy.onCancelAgreementPressed")
+    local cancelBtn = tab:createButton(aBtnSplit.right, "Cancel", "onCancelAgreementPressed")
     cancelBtn.uppercase = false
 
     rightLister:placeCenter(vec2(rightLister.inner.width, 4))
@@ -175,8 +175,8 @@ function EdeDiplomacy.buildConfirmDialog(container)
     confirmTextField.fontSize = 13
 
     local btnSplit = UIVerticalSplitter(lister:nextRect(30), 10, 0, 0.5)
-    local confirmBtn = confirmWindow:createButton(btnSplit.left, "Confirm", "EdeDiplomacy.onConfirmDialogYes")
-    local cancelBtn = confirmWindow:createButton(btnSplit.right, "Cancel", "EdeDiplomacy.onConfirmDialogNo")
+    local confirmBtn = confirmWindow:createButton(btnSplit.left, "Confirm", "onConfirmDialogYes")
+    local cancelBtn = confirmWindow:createButton(btnSplit.right, "Cancel", "onConfirmDialogNo")
 end
 
 function EdeDiplomacy.showConfirmDialog(title, description, callback, targetIndex, rate)
