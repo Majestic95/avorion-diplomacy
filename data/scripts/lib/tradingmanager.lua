@@ -12,8 +12,17 @@ include ("randomext")
 include ("callable")
 
 -- [EDE MOD] Tariff/agreement hooks for cargo trades
-local edeTariffManager = include("diplomacy/tariff_manager")
-local edeAgreementManager = include("diplomacy/agreement_manager")
+-- Lazy-load EDE modules to avoid interfering with TradingManager's own loading
+local edeTariffManager = nil
+local edeAgreementManager = nil
+
+local function edeGetModules()
+    if not edeTariffManager then
+        edeTariffManager = include("diplomacy/tariff_manager")
+        edeAgreementManager = include("diplomacy/agreement_manager")
+    end
+    return edeTariffManager, edeAgreementManager
+end
 
 local function edeApplyTradeTariff(shipFaction, player, price, goodName, tradeDirection)
     if not shipFaction or not player or price <= 0 then return end
@@ -22,9 +31,12 @@ local function edeApplyTradeTariff(shipFaction, player, price, goodName, tradeDi
     local stationFactionIndex = station.factionIndex
     local store = Server()
 
-    local surcharge, tariff_rate = edeTariffManager.calculateSurcharge(
+    local TM, AM = edeGetModules()
+    if not TM or not AM then return end
+
+    local surcharge, tariff_rate = TM.calculateSurcharge(
         store, stationFactionIndex, shipFaction.index, price)
-    local _, agreement_rate = edeAgreementManager.calculateDiscount(
+    local _, agreement_rate = AM.calculateDiscount(
         store, shipFaction.index, stationFactionIndex, price)
 
     local net = surcharge
@@ -35,12 +47,12 @@ local function edeApplyTradeTariff(shipFaction, player, price, goodName, tradeDi
     if net > 0 then
         if shipFaction:canPayMoney(net) then
             shipFaction:pay("Tariff surcharge", net)
-            local tariff = edeTariffManager.get(store, stationFactionIndex, shipFaction.index)
-                or edeTariffManager.get(store, shipFaction.index, stationFactionIndex)
+            local tariff = TM.get(store, stationFactionIndex, shipFaction.index)
+                or TM.get(store, shipFaction.index, stationFactionIndex)
             if tariff and tariff.imposer then
                 local imposer = Faction(tariff.imposer)
                 if imposer then imposer:receive("Tariff revenue", net) end
-                edeTariffManager.recordRevenue(store, tariff.imposer, tariff.target, net)
+                TM.recordRevenue(store, tariff.imposer, tariff.target, net)
             end
             player:sendChatMessage("EDE", ChatMessageType.Normal,
                 string.format("Tariff: -%s cr (%d%% on %s of %s)",

@@ -1,0 +1,746 @@
+-- EDE Diplomacy Panel — tab inside the Player Window (press I).
+-- Sits next to the vanilla Diplomacy tab.
+--
+-- Attach to player: /run Player():addScriptOnce("player/ui/ede_diplomacy.lua")
+
+package.path = package.path .. ";data/scripts/lib/?.lua"
+include("callable")
+
+-- Don't remove or alter the following comment, it tells the game the namespace this script lives in. If you remove it, the script will break.
+-- namespace EdeDiplomacy
+EdeDiplomacy = {}
+
+-- Client UI elements
+local tab = nil
+local factionLines = {}
+local overviewStatusLabel = nil
+local targetCombo = nil
+local tariffRateSlider = nil
+local tariffRateLabel = nil
+local agreementDiscountSlider = nil
+local agreementDiscountLabel = nil
+local actionStatusLabel = nil
+local tariffPreviewLabel = nil
+local agreementPreviewLabel = nil
+
+-- Cached data
+local cachedFactions = {}
+
+-- ============================================================
+-- INITIALIZATION
+-- ============================================================
+
+function EdeDiplomacy.initialize()
+    if onClient() then
+        tab = PlayerWindow():createTab("EDE Diplomacy", "data/textures/icons/domino-mask.png", "Economics & Diplomacy")
+        PlayerWindow():moveTabToPosition(tab, 4)
+        tab.onShowFunction = "EdeDiplomacy.onShowTab"
+        EdeDiplomacy.buildUI(tab)
+    end
+end
+
+function EdeDiplomacy.onShowTab()
+    invokeServerFunction("serverGetDiplomacyData")
+end
+
+-- ============================================================
+-- CLIENT: Build UI
+-- ============================================================
+
+function EdeDiplomacy.buildUI(tab)
+    local size = tab.rect.size
+    local vsplit = UIVerticalSplitter(Rect(size), 10, 0, 0.55)
+
+    -- ==================
+    -- LEFT: Overview
+    -- ==================
+    local leftLister = UIVerticalLister(vsplit.left, 4, 5)
+
+    local headerRect = leftLister:placeCenter(vec2(leftLister.inner.width, 22))
+    local hsplit = UIArbitraryVerticalSplitter(headerRect, 5, 0, 160, 245, 330)
+    tab:createLabel(hsplit:partition(0).lower, "Faction", 13)
+    tab:createLabel(hsplit:partition(1).lower, "Score", 13)
+    tab:createLabel(hsplit:partition(2).lower, "Tariff", 13)
+    tab:createLabel(hsplit:partition(3).lower, "Agree.", 13)
+
+    factionLines = {}
+    for i = 1, 14 do
+        local rowRect = leftLister:placeCenter(vec2(leftLister.inner.width, 18))
+        local rsplit = UIArbitraryVerticalSplitter(rowRect, 5, 0, 160, 245, 330)
+        local line = {}
+        line.nameLabel = tab:createLabel(rsplit:partition(0).lower, "", 12)
+        line.nameLabel.shortenText = true
+        line.nameLabel.width = 155
+        line.scoreLabel = tab:createLabel(rsplit:partition(1).lower, "", 12)
+        line.tariffLabel = tab:createLabel(rsplit:partition(2).lower, "", 12)
+        line.agreementLabel = tab:createLabel(rsplit:partition(3).lower, "", 12)
+        factionLines[i] = line
+    end
+
+    local statusRect = leftLister:placeCenter(vec2(leftLister.inner.width, 18))
+    overviewStatusLabel = tab:createLabel(statusRect.lower, "", 11)
+
+    -- ==================
+    -- RIGHT: Actions
+    -- ==================
+    local rightLister = UIVerticalLister(vsplit.right, 5, 5)
+
+    -- Target selector
+    local targetHeaderRect = rightLister:placeCenter(vec2(rightLister.inner.width, 20))
+    tab:createLabel(targetHeaderRect.lower, "Target Faction:", 13)
+    local targetComboRect = rightLister:placeCenter(vec2(rightLister.inner.width, 25))
+    targetCombo = tab:createValueComboBox(targetComboRect, "EdeDiplomacy.onTargetFactionChanged")
+
+    rightLister:placeCenter(vec2(rightLister.inner.width, 4))
+
+    -- Tariff section
+    local tariffHeader = rightLister:placeCenter(vec2(rightLister.inner.width, 18))
+    tab:createLabel(tariffHeader.lower, "TARIFFS", 13)
+
+    local tariffSliderRect = rightLister:placeCenter(vec2(rightLister.inner.width, 25))
+    local tSplit = UIVerticalSplitter(tariffSliderRect, 5, 0, 0.75)
+    tariffRateSlider = tab:createSlider(tSplit.left, 1, 50, 49, "", "EdeDiplomacy.onTariffSliderChanged")
+    tariffRateSlider.value = 15
+    tariffRateLabel = tab:createLabel(tSplit.right.lower, "15%", 13)
+
+    -- Tariff enforcement preview
+    local tariffPreviewRect = rightLister:placeCenter(vec2(rightLister.inner.width, 18))
+    tariffPreviewLabel = tab:createLabel(tariffPreviewRect.lower, "", 11)
+
+    local tariffBtnRect = rightLister:placeCenter(vec2(rightLister.inner.width, 28))
+    local tBtnSplit = UIVerticalSplitter(tariffBtnRect, 5, 0, 0.5)
+    local declareBtn = tab:createButton(tBtnSplit.left, "Declare", "EdeDiplomacy.onDeclareTariffPressed")
+    declareBtn.uppercase = false
+    local removeBtn = tab:createButton(tBtnSplit.right, "Remove", "EdeDiplomacy.onRemoveTariffPressed")
+    removeBtn.uppercase = false
+
+    rightLister:placeCenter(vec2(rightLister.inner.width, 4))
+
+    -- Agreement section
+    local agreeHeader = rightLister:placeCenter(vec2(rightLister.inner.width, 18))
+    tab:createLabel(agreeHeader.lower, "TRADE AGREEMENTS", 13)
+
+    local agreeSliderRect = rightLister:placeCenter(vec2(rightLister.inner.width, 25))
+    local aSplit = UIVerticalSplitter(agreeSliderRect, 5, 0, 0.75)
+    agreementDiscountSlider = tab:createSlider(aSplit.left, 1, 30, 29, "", "EdeDiplomacy.onAgreementSliderChanged")
+    agreementDiscountSlider.value = 10
+    agreementDiscountLabel = tab:createLabel(aSplit.right.lower, "10%", 13)
+
+    -- Agreement acceptance preview
+    local agreePreviewRect = rightLister:placeCenter(vec2(rightLister.inner.width, 18))
+    agreementPreviewLabel = tab:createLabel(agreePreviewRect.lower, "", 11)
+
+    local agreeBtnRect = rightLister:placeCenter(vec2(rightLister.inner.width, 28))
+    local aBtnSplit = UIVerticalSplitter(agreeBtnRect, 5, 0, 0.5)
+    local proposeBtn = tab:createButton(aBtnSplit.left, "Propose", "EdeDiplomacy.onProposeAgreementPressed")
+    proposeBtn.uppercase = false
+    local cancelBtn = tab:createButton(aBtnSplit.right, "Cancel", "EdeDiplomacy.onCancelAgreementPressed")
+    cancelBtn.uppercase = false
+
+    rightLister:placeCenter(vec2(rightLister.inner.width, 4))
+
+    local actionRect = rightLister:placeCenter(vec2(rightLister.inner.width, 18))
+    actionStatusLabel = tab:createLabel(actionRect.lower, "", 11)
+
+    -- Confirmation dialog (hidden by default)
+    EdeDiplomacy.buildConfirmDialog(tab)
+end
+
+-- Confirmation dialog state
+local confirmWindow = nil
+local confirmTextField = nil
+local confirmCallback = nil
+local confirmTargetIndex = nil
+local confirmRate = nil
+
+function EdeDiplomacy.buildConfirmDialog(container)
+    confirmWindow = container:createWindow(Rect(vec2(450, 160)))
+    confirmWindow.transparency = 0.1
+    confirmWindow.consumeAllEvents = true
+    confirmWindow.showCloseButton = true
+    confirmWindow.closeableWithEscape = true
+    confirmWindow.moveable = true
+    confirmWindow.caption = "Confirm Action"
+    confirmWindow:hide()
+
+    local lister = UIVerticalLister(Rect(confirmWindow.size), 10, 10)
+    local topSplit = UIVerticalSplitter(lister:nextRect(80), 10, 0, 0.5)
+    topSplit:setLeftQuadratic()
+
+    local warningIcon = confirmWindow:createPicture(topSplit.left, "data/textures/icons/hazard-sign.png")
+    warningIcon.isIcon = true
+    warningIcon.color = ColorRGB(1, 1, 0)
+
+    confirmTextField = confirmWindow:createTextField(topSplit.right, "")
+    confirmTextField.fontSize = 13
+
+    local btnSplit = UIVerticalSplitter(lister:nextRect(30), 10, 0, 0.5)
+    local confirmBtn = confirmWindow:createButton(btnSplit.left, "Confirm", "EdeDiplomacy.onConfirmDialogYes")
+    local cancelBtn = confirmWindow:createButton(btnSplit.right, "Cancel", "EdeDiplomacy.onConfirmDialogNo")
+end
+
+function EdeDiplomacy.showConfirmDialog(title, description, callback, targetIndex, rate)
+    if not confirmWindow then return end
+    confirmWindow.caption = title
+    confirmTextField.text = description
+    confirmCallback = callback
+    confirmTargetIndex = targetIndex
+    confirmRate = rate
+    confirmWindow:show()
+end
+
+function EdeDiplomacy.onConfirmDialogYes()
+    if confirmWindow then confirmWindow:hide() end
+    if confirmCallback then
+        confirmCallback(confirmTargetIndex, confirmRate)
+    end
+end
+
+function EdeDiplomacy.onConfirmDialogNo()
+    if confirmWindow then confirmWindow:hide() end
+    confirmCallback = nil
+end
+
+-- ============================================================
+-- CLIENT: Callbacks
+-- ============================================================
+
+function EdeDiplomacy.onTariffSliderChanged(value)
+    if tariffRateLabel then
+        tariffRateLabel.caption = tostring(math.floor(value)) .. "%"
+    end
+end
+
+function EdeDiplomacy.onAgreementSliderChanged(value)
+    if agreementDiscountLabel then
+        agreementDiscountLabel.caption = tostring(math.floor(value)) .. "%"
+    end
+end
+
+function EdeDiplomacy.onTargetFactionChanged()
+    -- Request preview from server when target changes
+    local targetIndex = EdeDiplomacy.getSelectedFactionIndex()
+    if targetIndex then
+        invokeServerFunction("serverGetPreview", targetIndex)
+    else
+        EdeDiplomacy.clearPreviews()
+    end
+end
+
+function EdeDiplomacy.onDeclareTariffPressed()
+    local targetIndex = EdeDiplomacy.getSelectedFactionIndex()
+    if not targetIndex then
+        EdeDiplomacy.setActionStatus("Select a target faction first.")
+        return
+    end
+    local rate = math.floor(tariffRateSlider.value) / 100
+    local penalty = math.floor(rate * 100000)
+
+    -- Find faction name from cached data
+    local factionName = "Unknown"
+    for _, f in ipairs(cachedFactions) do
+        if f.index == targetIndex then factionName = f.name; break end
+    end
+
+    local desc = string.format(
+        "Declaring a %d%% tariff on %s will:\n\n" ..
+        "- Reset relations to neutral (0) if currently positive\n" ..
+        "- Apply a -%d relations penalty\n" ..
+        "- Relations cannot be positive while tariff is active\n" ..
+        "- May provoke retaliation or war\n\n" ..
+        "Proceed?",
+        math.floor(rate * 100), factionName, penalty)
+
+    EdeDiplomacy.showConfirmDialog(
+        "Declare Tariff",
+        desc,
+        function(ti, r)
+            invokeServerFunction("serverDeclareTariff", ti, r)
+        end,
+        targetIndex,
+        rate
+    )
+end
+
+function EdeDiplomacy.onRemoveTariffPressed()
+    local targetIndex = EdeDiplomacy.getSelectedFactionIndex()
+    if not targetIndex then
+        EdeDiplomacy.setActionStatus("Select a target faction first.")
+        return
+    end
+    invokeServerFunction("serverRemoveTariff", targetIndex)
+end
+
+function EdeDiplomacy.onProposeAgreementPressed()
+    local targetIndex = EdeDiplomacy.getSelectedFactionIndex()
+    if not targetIndex then
+        EdeDiplomacy.setActionStatus("Select a target faction first.")
+        return
+    end
+    local discount = math.floor(agreementDiscountSlider.value) / 100
+    invokeServerFunction("serverProposeAgreement", targetIndex, discount)
+end
+
+function EdeDiplomacy.onCancelAgreementPressed()
+    local targetIndex = EdeDiplomacy.getSelectedFactionIndex()
+    if not targetIndex then
+        EdeDiplomacy.setActionStatus("Select a target faction first.")
+        return
+    end
+    invokeServerFunction("serverCancelAgreement", targetIndex)
+end
+
+function EdeDiplomacy.getSelectedFactionIndex()
+    if not targetCombo then return nil end
+    local selected = targetCombo.selectedValue
+    if selected and selected ~= 0 then return selected end
+    return nil
+end
+
+function EdeDiplomacy.setActionStatus(text)
+    if actionStatusLabel then actionStatusLabel.caption = text or "" end
+end
+
+function EdeDiplomacy.clearPreviews()
+    if tariffPreviewLabel then
+        tariffPreviewLabel.caption = ""
+    end
+    if agreementPreviewLabel then
+        agreementPreviewLabel.caption = ""
+    end
+end
+
+-- ============================================================
+-- CLIENT: Receive data from server
+-- ============================================================
+
+function EdeDiplomacy.clientReceiveDiplomacyData(data)
+    if not data then return end
+    cachedFactions = data.factions or {}
+
+    for i, line in ipairs(factionLines) do
+        local f = cachedFactions[i]
+        if f then
+            line.nameLabel.caption = f.name or "Unknown"
+            line.scoreLabel.caption = tostring(f.score or 0)
+            if f.tariff_rate then
+                line.tariffLabel.caption = tostring(math.floor(f.tariff_rate * 100)) .. "%"
+                line.tariffLabel.color = ColorRGB(1.0, 0.4, 0.4)
+            else
+                line.tariffLabel.caption = "-"
+                line.tariffLabel.color = ColorRGB(0.6, 0.6, 0.6)
+            end
+            if f.has_agreement then
+                line.agreementLabel.caption = "Yes"
+                line.agreementLabel.color = ColorRGB(0.4, 1.0, 0.4)
+            else
+                line.agreementLabel.caption = "-"
+                line.agreementLabel.color = ColorRGB(0.6, 0.6, 0.6)
+            end
+        else
+            line.nameLabel.caption = ""
+            line.scoreLabel.caption = ""
+            line.tariffLabel.caption = ""
+            line.agreementLabel.caption = ""
+        end
+    end
+
+    if overviewStatusLabel then
+        overviewStatusLabel.caption = string.format(
+            "Your Score: %d  |  %d factions", data.playerScore or 0, #cachedFactions)
+    end
+
+    if targetCombo then
+        targetCombo:clear()
+        targetCombo:addEntry(0, "-- Select Faction --")
+        for _, f in ipairs(cachedFactions) do
+            if f.index then
+                targetCombo:addEntry(f.index, f.name or ("Faction " .. tostring(f.index)))
+            end
+        end
+    end
+
+    EdeDiplomacy.clearPreviews()
+end
+
+function EdeDiplomacy.clientReceiveActionResult(success, message)
+    EdeDiplomacy.setActionStatus(message or "")
+    if success then
+        invokeServerFunction("serverGetDiplomacyData")
+    end
+end
+
+function EdeDiplomacy.clientReceivePreview(tariffPreview, agreementPreview)
+    if tariffPreviewLabel then
+        tariffPreviewLabel.caption = tariffPreview or ""
+        if tariffPreview and tariffPreview:find("Can enforce") then
+            tariffPreviewLabel.color = ColorRGB(0.4, 1.0, 0.4)
+        else
+            tariffPreviewLabel.color = ColorRGB(1.0, 0.4, 0.4)
+        end
+    end
+    if agreementPreviewLabel then
+        agreementPreviewLabel.caption = agreementPreview or ""
+        if agreementPreview and agreementPreview:find("Will accept") then
+            agreementPreviewLabel.color = ColorRGB(0.4, 1.0, 0.4)
+        else
+            agreementPreviewLabel.color = ColorRGB(1.0, 0.6, 0.2)
+        end
+    end
+end
+
+-- ============================================================
+-- SERVER: Helpers
+-- ============================================================
+
+-- Territory cache: faction_index → sector count (refreshed per tab open)
+local territoryCounts = {}
+
+-- Scan territory around all known factions using Galaxy():getControllingFaction()
+-- Samples a grid around the galaxy center. Step size keeps it fast (~400 checks).
+local function scanTerritory()
+    territoryCounts = {}
+    local galaxy = Galaxy()
+    local step = 25
+    local radius = 250
+
+    for x = -radius, radius, step do
+        for y = -radius, radius, step do
+            local controllingFaction = galaxy:getControllingFaction(x, y)
+            if controllingFaction then
+                local fi = controllingFaction.index
+                if fi then
+                    territoryCounts[fi] = (territoryCounts[fi] or 0) + 1
+                end
+            end
+        end
+    end
+end
+
+-- Calculate power score for any faction type
+local function calcFactionScore(faction)
+    local PowerScore = include("economy/power_score")
+
+    -- numShips/numStations only exist on Player and Alliance, not base Faction (AI)
+    local ships = 0
+    local stations = 0
+    local ok_ships = pcall(function() ships = faction.numShips or 0 end)
+    local ok_stations = pcall(function() stations = faction.numStations or 0 end)
+    if not ok_ships then ships = 0 end
+    if not ok_stations then stations = 0 end
+
+    local sectors = territoryCounts[faction.index] or 0
+
+    -- AI factions get an archetype bonus
+    local archetype = nil
+    if faction.isAIFaction then
+        archetype = "Corporate"
+    end
+
+    return PowerScore.calculate({
+        ships = ships,
+        stations = stations,
+        money = faction.money or 0,
+        sectors = sectors,
+        archetype = archetype,
+    })
+end
+
+-- ============================================================
+-- SERVER: Data gathering
+-- ============================================================
+
+function EdeDiplomacy.serverGetDiplomacyData()
+    if not onServer() then return end
+    local player = Player(callingPlayer)
+    if not player then return end
+
+    local TariffManager = include("diplomacy/tariff_manager")
+    local AgreementManager = include("diplomacy/agreement_manager")
+    local store = Server()
+    local playerIndex = player.index
+
+    -- Scan territory for all factions (fast grid sample)
+    scanTerritory()
+
+    local playerScore = calcFactionScore(player)
+
+    -- Gather factions: from current sector entities + galaxy map factions
+    local factions = {}
+    local seen = {}
+
+    -- Source 1: entities in current sector
+    local sector = Sector()
+    if sector then
+        local entities = {sector:getEntities()}
+        for _, entity in ipairs(entities) do
+            local fi = entity.factionIndex
+            if fi and fi ~= playerIndex and not seen[fi] then
+                local faction = Faction(fi)
+                if faction and (faction.isAIFaction or faction.isPlayer or faction.isAlliance) then
+                    seen[fi] = true
+                end
+            end
+        end
+    end
+
+    -- Source 2: galaxy map factions near the player
+    local sx, sy = sector:getCoordinates()
+    local mapFactions = Galaxy():getMapHomeSectors(sx, sy, 200)
+    if mapFactions then
+        for fi, _ in pairs(mapFactions) do
+            if fi ~= playerIndex and not seen[fi] then
+                local faction = Faction(fi)
+                if faction then
+                    seen[fi] = true
+                end
+            end
+        end
+    end
+
+    -- Build faction data for all seen factions
+    for fi, _ in pairs(seen) do
+        local faction = Faction(fi)
+        if faction then
+            local fScore = calcFactionScore(faction)
+
+            local tariff = TariffManager.get(store, playerIndex, fi)
+            local tariff_on_us = TariffManager.get(store, fi, playerIndex)
+            local agreement = AgreementManager.getActive(store, playerIndex, fi)
+
+            local tariff_rate = nil
+            if tariff and tariff.active then
+                tariff_rate = tariff.rate
+            elseif tariff_on_us and tariff_on_us.active then
+                tariff_rate = tariff_on_us.rate
+            end
+
+            -- Enforce: relations cannot be positive while any tariff is active
+            if tariff_rate then
+                local currentRelations = player:getRelations(fi)
+                if currentRelations > 0 then
+                    Galaxy():setFactionRelations(player, faction, 0)
+                end
+            end
+
+            table.insert(factions, {
+                index = fi,
+                name = faction.name,
+                score = fScore,
+                tariff_rate = tariff_rate,
+                has_agreement = agreement ~= nil,
+            })
+        end
+    end
+
+    table.sort(factions, function(a, b) return a.score > b.score end)
+
+    local display = {}
+    for i = 1, math.min(#factions, 14) do
+        display[i] = factions[i]
+    end
+
+    invokeClientFunction(player, "clientReceiveDiplomacyData", {
+        factions = display,
+        playerIndex = playerIndex,
+        playerScore = playerScore,
+    })
+end
+
+-- ============================================================
+-- SERVER: Preview (enforcement check + AI acceptance check)
+-- ============================================================
+
+function EdeDiplomacy.serverGetPreview(targetIndex)
+    if not onServer() then return end
+    local player = Player(callingPlayer)
+    if not player then return end
+
+    local PowerScore = include("economy/power_score")
+    local targetFaction = Faction(targetIndex)
+    if not targetFaction then return end
+
+    local playerScore = calcFactionScore(player)
+    local targetScore = calcFactionScore(targetFaction)
+
+    -- Tariff preview
+    local canEnforce, ratio = PowerScore.canEnforce(playerScore, targetScore, "tariff")
+    local tariffPreview
+    if canEnforce then
+        local cost = PowerScore.enforcementCost(playerScore, targetScore, 10000)
+        tariffPreview = string.format("Can enforce (%.0f%% power ratio, ~%d cr/cycle)", ratio * 100, cost)
+    else
+        tariffPreview = string.format("Cannot enforce (%.0f%% power, need 30%%)", ratio * 100)
+    end
+
+    -- Agreement preview
+    local agreementPreview
+    if targetFaction.isAIFaction then
+        local relations = targetFaction:getRelations(player.index)
+        if relations >= 30000 then
+            agreementPreview = string.format("Will accept (relations: %d)", relations)
+        elseif relations >= 10000 then
+            agreementPreview = string.format("Will likely accept (relations: %d)", relations)
+        elseif relations >= 0 then
+            agreementPreview = string.format("May reject (relations: %d, needs improvement)", relations)
+        else
+            agreementPreview = string.format("Will reject (relations: %d, too hostile)", relations)
+        end
+    elseif targetFaction.isPlayer or targetFaction.isAlliance then
+        agreementPreview = "Player/Alliance — proposal will be sent"
+    else
+        agreementPreview = "Unknown faction type"
+    end
+
+    invokeClientFunction(player, "clientReceivePreview", tariffPreview, agreementPreview)
+end
+
+-- ============================================================
+-- SERVER: Actions
+-- ============================================================
+
+function EdeDiplomacy.serverDeclareTariff(targetIndex, rate)
+    if not onServer() then return end
+    local player = Player(callingPlayer)
+    if not player then return end
+
+    local TariffManager = include("diplomacy/tariff_manager")
+    local store = Server()
+
+    local targetFaction = Faction(targetIndex)
+    if not targetFaction then
+        invokeClientFunction(player, "clientReceiveActionResult", false, "Faction not found.")
+        return
+    end
+
+    local pScore = calcFactionScore(player)
+    local tScore = calcFactionScore(targetFaction)
+
+    local ok, err = TariffManager.declare(
+        store, player.index, targetIndex,
+        pScore, tScore, rate, Server().unpausedRuntime
+    )
+
+    if ok then
+        -- Apply relation penalty
+        -- Step 1: clamp to 0 if positive
+        local currentRelations = player:getRelations(targetIndex)
+        if currentRelations > 0 then
+            Galaxy():setFactionRelations(player, targetFaction, 0)
+        end
+        -- Step 2: subtract penalty based on tariff rate (rate × 100,000)
+        local penalty = math.floor(rate * 100000)
+        Galaxy():changeFactionRelations(player, targetFaction, -penalty)
+
+        local newRelations = player:getRelations(targetIndex)
+        local msg = string.format("Tariff declared: %d%% on %s (relations: %d)",
+            math.floor(rate * 100), targetFaction.name, newRelations)
+        player:sendChatMessage("EDE", ChatMessageType.Normal, msg)
+        invokeClientFunction(player, "clientReceiveActionResult", true, msg)
+    else
+        invokeClientFunction(player, "clientReceiveActionResult", false, err or "Failed.")
+    end
+end
+
+function EdeDiplomacy.serverRemoveTariff(targetIndex)
+    if not onServer() then return end
+    local player = Player(callingPlayer)
+    if not player then return end
+
+    local TariffManager = include("diplomacy/tariff_manager")
+    local store = Server()
+
+    local ok = TariffManager.remove(store, player.index, targetIndex)
+    if ok then
+        local name = Faction(targetIndex) and Faction(targetIndex).name or tostring(targetIndex)
+        local msg = "Tariff on " .. name .. " removed."
+        player:sendChatMessage("EDE", ChatMessageType.Normal, msg)
+        invokeClientFunction(player, "clientReceiveActionResult", true, msg)
+    else
+        invokeClientFunction(player, "clientReceiveActionResult", false, "No active tariff to remove.")
+    end
+end
+
+function EdeDiplomacy.serverProposeAgreement(targetIndex, discount)
+    if not onServer() then return end
+    local player = Player(callingPlayer)
+    if not player then return end
+
+    local AgreementManager = include("diplomacy/agreement_manager")
+    local store = Server()
+
+    local targetFaction = Faction(targetIndex)
+    if not targetFaction then
+        invokeClientFunction(player, "clientReceiveActionResult", false, "Faction not found.")
+        return
+    end
+
+    local ok, err = AgreementManager.propose(
+        store, player.index, targetIndex,
+        discount, discount, Server().unpausedRuntime
+    )
+
+    if not ok then
+        invokeClientFunction(player, "clientReceiveActionResult", false, err or "Failed.")
+        return
+    end
+
+    -- AI faction: evaluate acceptance based on relations
+    if targetFaction.isAIFaction then
+        local relations = targetFaction:getRelations(player.index)
+
+        -- Acceptance thresholds based on relations
+        -- Positive relations = more likely to accept
+        if relations >= 10000 then
+            AgreementManager.accept(store, player.index, targetIndex, Server().unpausedRuntime)
+            local msg = string.format("Trade agreement with %s accepted (mutual %d%%)",
+                targetFaction.name, math.floor(discount * 100))
+            player:sendChatMessage("EDE", ChatMessageType.Normal, msg)
+            invokeClientFunction(player, "clientReceiveActionResult", true, msg)
+        else
+            -- Reject — remove the proposal
+            AgreementManager.decline(store, player.index, targetIndex)
+            local msg = string.format("%s rejected your trade proposal (relations too low: %d)",
+                targetFaction.name, relations)
+            player:sendChatMessage("EDE", ChatMessageType.Normal, msg)
+            invokeClientFunction(player, "clientReceiveActionResult", false, msg)
+        end
+    else
+        -- Player/Alliance: proposal is pending (they decide later)
+        local msg = string.format("Agreement proposed to %s (%d%%)",
+            targetFaction.name, math.floor(discount * 100))
+        invokeClientFunction(player, "clientReceiveActionResult", true, msg)
+    end
+end
+
+function EdeDiplomacy.serverCancelAgreement(targetIndex)
+    if not onServer() then return end
+    local player = Player(callingPlayer)
+    if not player then return end
+
+    local AgreementManager = include("diplomacy/agreement_manager")
+    local store = Server()
+
+    local ok = AgreementManager.cancel(store, player.index, targetIndex)
+    if ok then
+        local name = Faction(targetIndex) and Faction(targetIndex).name or tostring(targetIndex)
+        local msg = "Agreement with " .. name .. " cancelled."
+        player:sendChatMessage("EDE", ChatMessageType.Normal, msg)
+        invokeClientFunction(player, "clientReceiveActionResult", true, msg)
+    else
+        invokeClientFunction(player, "clientReceiveActionResult", false, "No active agreement to cancel.")
+    end
+end
+
+-- ============================================================
+-- RPC declarations
+-- ============================================================
+callable(EdeDiplomacy, "serverGetDiplomacyData")
+callable(EdeDiplomacy, "serverGetPreview")
+callable(EdeDiplomacy, "serverDeclareTariff")
+callable(EdeDiplomacy, "serverRemoveTariff")
+callable(EdeDiplomacy, "serverProposeAgreement")
+callable(EdeDiplomacy, "serverCancelAgreement")
+callable(EdeDiplomacy, "clientReceiveDiplomacyData")
+callable(EdeDiplomacy, "clientReceiveActionResult")
+callable(EdeDiplomacy, "clientReceivePreview")
