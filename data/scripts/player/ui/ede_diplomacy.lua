@@ -465,71 +465,43 @@ function EdeDiplomacy.serverGetDiplomacyData()
 
     local playerScore = calcFactionScore(player)
 
-    -- Gather factions: from current sector entities + galaxy map factions
+    -- Use getAllRelations() to match vanilla diplomacy — only show factions the player has met
     local factions = {}
-    local seen = {}
 
-    -- Source 1: entities in current sector
-    local sector = Sector()
-    if sector then
-        local entities = {sector:getEntities()}
-        for _, entity in ipairs(entities) do
-            local fi = entity.factionIndex
-            if fi and fi ~= playerIndex and not seen[fi] then
-                local faction = Faction(fi)
-                if faction and (faction.isAIFaction or faction.isPlayer or faction.isAlliance) then
-                    seen[fi] = true
+    for _, relation in pairs({player:getAllRelations()}) do
+        local fi = relation.factionIndex
+        if fi and fi ~= playerIndex then
+            local faction = Faction(fi)
+            if faction then
+                local fScore = calcFactionScore(faction)
+
+                local tariff = TariffManager.get(store, playerIndex, fi)
+                local tariff_on_us = TariffManager.get(store, fi, playerIndex)
+                local agreement = AgreementManager.getActive(store, playerIndex, fi)
+
+                local tariff_rate = nil
+                if tariff and tariff.active then
+                    tariff_rate = tariff.rate
+                elseif tariff_on_us and tariff_on_us.active then
+                    tariff_rate = tariff_on_us.rate
                 end
-            end
-        end
-    end
 
-    -- Source 2: galaxy map factions near the player
-    local sx, sy = sector:getCoordinates()
-    local mapFactions = Galaxy():getMapHomeSectors(sx, sy, 200)
-    if mapFactions then
-        for fi, _ in pairs(mapFactions) do
-            if fi ~= playerIndex and not seen[fi] then
-                local faction = Faction(fi)
-                if faction then
-                    seen[fi] = true
+                -- Enforce: relations cannot be positive while any tariff is active
+                if tariff_rate then
+                    local currentRelations = player:getRelations(fi)
+                    if currentRelations > 0 then
+                        Galaxy():setFactionRelations(player, faction, 0)
+                    end
                 end
+
+                table.insert(factions, {
+                    index = fi,
+                    name = faction.name,
+                    score = fScore,
+                    tariff_rate = tariff_rate,
+                    has_agreement = agreement ~= nil,
+                })
             end
-        end
-    end
-
-    -- Build faction data for all seen factions
-    for fi, _ in pairs(seen) do
-        local faction = Faction(fi)
-        if faction then
-            local fScore = calcFactionScore(faction)
-
-            local tariff = TariffManager.get(store, playerIndex, fi)
-            local tariff_on_us = TariffManager.get(store, fi, playerIndex)
-            local agreement = AgreementManager.getActive(store, playerIndex, fi)
-
-            local tariff_rate = nil
-            if tariff and tariff.active then
-                tariff_rate = tariff.rate
-            elseif tariff_on_us and tariff_on_us.active then
-                tariff_rate = tariff_on_us.rate
-            end
-
-            -- Enforce: relations cannot be positive while any tariff is active
-            if tariff_rate then
-                local currentRelations = player:getRelations(fi)
-                if currentRelations > 0 then
-                    Galaxy():setFactionRelations(player, faction, 0)
-                end
-            end
-
-            table.insert(factions, {
-                index = fi,
-                name = faction.name,
-                score = fScore,
-                tariff_rate = tariff_rate,
-                has_agreement = agreement ~= nil,
-            })
         end
     end
 
